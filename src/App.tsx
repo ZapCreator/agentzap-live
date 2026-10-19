@@ -1040,12 +1040,13 @@ export default function App() {
     </div>
   );
         }
-        
+export default App;
+
             
-      });
-    } catch (error) {
-      console.error(error);
-    }
-  };
+    
+    
+    
+    
+
   
   
