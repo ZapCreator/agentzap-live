@@ -579,4 +579,473 @@ export default function App() {
       fetch('/api/alerts/dispatch-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify
+        body: JSON.stringify({
+          leadId: newBooking.leadId,
+          buyerName: newBooking.buyerName,
+          buyerPhone: newBooking.buyerPhone,
+          propertyTitle: newBooking.propertyTitle,
+          intent: 'SITE_VISIT_BOOKING',
+          agentPhone: currentUser?.phone || '+91 98201 98765',
+          messageText: `Site visit confirmed for ${newBooking.tourDate} at ${newBooking.tourTime}`,
+          priority: 'URGENT',
+          googleCalendarUrl: newBooking.googleCalendarUrl,
+        }),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+
+    showToast(`Site visit booked for ${newBooking.buyerName}! Status updated to Visit Scheduled.`);
+  };
+
+  const handleUpdateBookingStatus = (bookingId: string, newStatus: BookingStatus) => {
+    setBookings((prev) =>
+      prev.map((b) => (b.id === bookingId ? { ...b, status: newStatus } : b))
+    );
+    showToast(`Booking marked as ${newStatus}.`);
+  };
+
+  const handleOpenBookingForLead = (lead: BuyerLead) => {
+    setSelectedLeadForBooking(lead);
+    setSelectedPropertyForBooking(properties.find((p) => p.id === lead.propertyId) || null);
+    setIsSiteVisitModalOpen(true);
+  };
+
+  const handleOpenInteractiveForLead = (lead: BuyerLead) => {
+    if (lead.status === 'New') {
+      handleUpdateLeadStatus(lead.id, 'Contacted');
+    }
+    setSelectedLeadForInteractive(lead);
+  };
+
+  const handleTogglePropertyStatus = (propertyId: string) => {
+    setProperties((prev) =>
+      prev.map((p) => {
+        if (p.id === propertyId) {
+          const nextStatus = p.status === 'Active' ? 'Under Offer' : 'Active';
+          return { ...p, status: nextStatus };
+        }
+        return p;
+      })
+    );
+  };
+
+  const handleOpenSimulateForProperty = (prop: Property) => {
+    setTargetPropertyForLead(prop);
+    setIsSimulateLeadOpen(true);
+  };
+
+  const unreadLeadsCount = leads.filter((l) => l.status === 'New').length;
+  const unreadAlertsCount = alerts.filter((a) => !a.isRead).length;
+  const upcomingVisitsCount = bookings.filter((b) => b.status === 'CONFIRMED').length;
+
+  return (
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 text-slate-900 flex flex-col font-sans">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-4 sm:bottom-6 left-3 right-3 sm:left-auto sm:right-6 z-50 flex items-center gap-2.5 px-4 py-3 bg-slate-900 text-white rounded-xl shadow-xl text-xs sm:text-sm font-medium animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Floating Urgent Agent Alert Banner (Step 4 Live Dispatch Indicator) */}
+      {latestUrgentAlert && (
+        <div className="fixed top-20 left-3 right-3 sm:left-auto sm:right-8 z-50 max-w-md w-auto sm:w-full bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border-2 border-emerald-500 animate-in slide-in-from-top-4 duration-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-red-500 animate-ping"></span>
+              <span className="text-xs font-bold text-emerald-400 tracking-wide uppercase">
+                ⚡ Real-Time Agent Alert ({latestUrgentAlert.priority})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLatestUrgentAlert(null)}
+              className="text-slate-400 hover:text-white p-1 rounded-md cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="mt-2 space-y-1">
+            <div className="text-sm font-bold text-white">
+              {latestUrgentAlert.buyerName} ({latestUrgentAlert.buyerPhone})
+            </div>
+            <div className="text-xs text-slate-300">
+              Listing: <span className="text-emerald-300 font-medium">{latestUrgentAlert.propertyTitle}</span>
+            </div>
+            <p className="text-xs text-slate-400 italic line-clamp-2 mt-1">
+              "{latestUrgentAlert.messageSnippet}"
+            </p>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                handleMarkAlertAsRead(latestUrgentAlert.id);
+                setIsAlertsDrawerOpen(true);
+                setLatestUrgentAlert(null);
+              }}
+              className="text-xs text-slate-300 hover:text-white underline cursor-pointer"
+            >
+              View in Alerts ({alerts.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                handleMarkAlertAsRead(latestUrgentAlert.id);
+                window.open(latestUrgentAlert.waReplyLink, '_blank', 'noopener,noreferrer');
+                setLatestUrgentAlert(null);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#25D366] hover:bg-[#20ba59] rounded-lg shadow-xs transition-colors cursor-pointer"
+            >
+              <Send className="w-3 h-3 fill-current" />
+              <span>Reply on WhatsApp</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Auth Modal when user is not logged in */}
+      <AuthModal
+        isOpen={!currentUser}
+        onLogin={handleLogin}
+        defaultEmail="shahidrehmani292@gmail.com"
+      />
+
+      {/* Navigation Bar (3-Zone Top Bar Contract) */}
+      <Navbar
+        user={currentUser}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onOpenAddProperty={() => setIsAddPropertyOpen(true)}
+        onLogout={handleLogout}
+        unreadLeadsCount={unreadLeadsCount}
+        unreadAlertsCount={unreadAlertsCount}
+        upcomingVisitsCount={upcomingVisitsCount}
+        onOpenAlerts={() => setIsAlertsDrawerOpen(true)}
+        isPro={isPro}
+        leadsCount={leads.length}
+        maxFreeLeads={5}
+        onOpenPaywall={() => setIsPaywallOpen(true)}
+      />
+
+      {/* Main Content Viewport */}
+      {currentUser && (
+        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8 overflow-x-hidden">
+          {/* Quick Tab Content: Overview */}
+          {activeTab === 'overview' && (
+            <div className="space-y-8">
+              {/* Stats Overview with Total Active Properties & Real-Time Alerts Trigger */}
+              <StatsOverview
+                properties={properties}
+                leads={leads}
+                user={currentUser}
+                onOpenAddProperty={() => setIsAddPropertyOpen(true)}
+                onViewLeads={() => setActiveTab('leads')}
+                onViewProperties={() => setActiveTab('properties')}
+                onOpenAlerts={() => setIsAlertsDrawerOpen(true)}
+                unreadAlertsCount={unreadAlertsCount}
+              />
+
+              {/* Core Requirement 1: Recent Buyer Leads list with direct WhatsApp action & Book Visit */}
+              <BuyerLeadsList
+                leads={leads}
+                user={currentUser}
+                onUpdateLeadStatus={handleUpdateLeadStatus}
+                onUpdateLeadPhone={handleUpdateLeadPhone}
+                onToggleSequenceStatus={handleToggleSequenceStatus}
+                onOpenAIParser={() => setIsAIParserOpen(true)}
+                onOpenInteractiveModal={handleOpenInteractiveForLead}
+                onBookSiteVisit={handleOpenBookingForLead}
+                isPro={isPro}
+                maxFreeLeads={5}
+                onOpenPaywall={() => setIsPaywallOpen(true)}
+                onSimulateLead={() => {
+                  if (!isPro && leads.length >= 5) {
+                    setIsPaywallOpen(true);
+                  } else {
+                    setTargetPropertyForLead(null);
+                    setIsSimulateLeadOpen(true);
+                  }
+                }}
+              />
+
+              {/* Core Requirement 2: Active Properties Showcase */}
+              <PropertiesList
+                properties={properties}
+                onOpenAddProperty={() => setIsAddPropertyOpen(true)}
+                onSimulateInquiryForProperty={handleOpenSimulateForProperty}
+                onToggleStatus={handleTogglePropertyStatus}
+                onOpenBrochure={(prop) => setActiveBrochureProperty(prop)}
+              />
+            </div>
+          )}
+
+          {/* Tab 2: Properties */}
+          {activeTab === 'properties' && (
+            <div className="space-y-6">
+              <PropertiesList
+                properties={properties}
+                onOpenAddProperty={() => setIsAddPropertyOpen(true)}
+                onSimulateInquiryForProperty={handleOpenSimulateForProperty}
+                onToggleStatus={handleTogglePropertyStatus}
+                onOpenBrochure={(prop) => setActiveBrochureProperty(prop)}
+              />
+            </div>
+          )}
+
+          {/* Tab 3: Leads */}
+          {activeTab === 'leads' && (
+            <div className="space-y-6">
+              <BuyerLeadsList
+                leads={leads}
+                user={currentUser}
+                onUpdateLeadStatus={handleUpdateLeadStatus}
+                onUpdateLeadPhone={handleUpdateLeadPhone}
+                onToggleSequenceStatus={handleToggleSequenceStatus}
+                onOpenAIParser={() => setIsAIParserOpen(true)}
+                onOpenInteractiveModal={handleOpenInteractiveForLead}
+                onBookSiteVisit={handleOpenBookingForLead}
+                isPro={isPro}
+                maxFreeLeads={5}
+                onOpenPaywall={() => setIsPaywallOpen(true)}
+                onSimulateLead={() => {
+                  if (!isPro && leads.length >= 5) {
+                    setIsPaywallOpen(true);
+                  } else {
+                    setTargetPropertyForLead(null);
+                    setIsSimulateLeadOpen(true);
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {/* Tab 4: Step 5 Site Visits & Calendar CRM */}
+          {activeTab === 'visits' && (
+            <div className="space-y-6">
+              <SiteVisitsManager
+                bookings={bookings}
+                user={currentUser}
+                properties={properties}
+                onOpenNewBookingModal={() => {
+                  setSelectedLeadForBooking(null);
+                  setSelectedPropertyForBooking(null);
+                  setIsSiteVisitModalOpen(true);
+                }}
+                onUpdateBookingStatus={handleUpdateBookingStatus}
+              />
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* Add Property Modal Form (Core Requirement) */}
+      <AddPropertyModal
+        isOpen={isAddPropertyOpen}
+        onClose={() => setIsAddPropertyOpen(false)}
+        onAddProperty={handleAddProperty}
+      />
+
+      {/* Simulate Lead Modal */}
+      <SimulateLeadModal
+        isOpen={isSimulateLeadOpen}
+        onClose={() => setIsSimulateLeadOpen(false)}
+        properties={properties}
+        targetProperty={targetPropertyForLead}
+        onAddLead={handleAddLead}
+      />
+
+      {/* AI Inbound Parser & Auto-Stop Sandbox Modal */}
+      <AIParserTesterModal
+        isOpen={isAIParserOpen}
+        onClose={() => setIsAIParserOpen(false)}
+        properties={properties}
+        onSaveLeadFromParsed={handleSaveLeadFromParsed}
+      />
+
+      {/* Interactive WhatsApp Elements (PDF Brochure & Quick Replies) Modal */}
+      {selectedLeadForInteractive && currentUser && (
+        <InteractiveWhatsAppModal
+          isOpen={!!selectedLeadForInteractive}
+          onClose={() => setSelectedLeadForInteractive(null)}
+          lead={selectedLeadForInteractive}
+          property={properties.find((p) => p.id === selectedLeadForInteractive.propertyId)}
+          user={currentUser}
+          onInteractiveSent={(summary) => {
+            showToast(summary);
+            setSelectedLeadForInteractive(null);
+          }}
+          onBookSiteVisit={handleOpenBookingForLead}
+          onMarkLeadContacted={(leadId) => handleUpdateLeadStatus(leadId, 'Contacted')}
+          onOpenBrochure={(prop) => setActiveBrochureProperty(prop)}
+        />
+      )}
+
+      {/* In-App Interactive Digital Property Brochure / Microsite Modal (Prevents 404) */}
+      <DigitalBrochureModal
+        isOpen={!!activeBrochureProperty}
+        onClose={() => {
+          setActiveBrochureProperty(null);
+          try {
+            const url = new URL(window.location.href);
+            if (url.searchParams.has('brochure')) {
+              url.searchParams.delete('brochure');
+              window.history.replaceState({}, '', url.pathname + url.search);
+            }
+            if (window.location.hash.includes('brochure=')) {
+              window.location.hash = '';
+            }
+          } catch {
+            // ignore
+          }
+        }}
+        property={activeBrochureProperty}
+        agent={currentUser}
+        onBookSiteVisit={(prop) => {
+          setSelectedPropertyForBooking(prop);
+          setSelectedLeadForBooking(null);
+          setIsSiteVisitModalOpen(true);
+        }}
+      />
+
+      {/* Step 5: Site Visit Booking Modal Form & Calendar Pass Generator */}
+      {currentUser && (
+        <SiteVisitModal
+          isOpen={isSiteVisitModalOpen}
+          onClose={() => setIsSiteVisitModalOpen(false)}
+          properties={properties}
+          leads={leads}
+          user={currentUser}
+          preSelectedLead={selectedLeadForBooking}
+          preSelectedProperty={selectedPropertyForBooking}
+          onBookingCreated={handleBookingCreated}
+        />
+      )}
+
+      {/* Step 4: Real-time Agent Alerts Drawer */}
+      {currentUser && (
+        <AgentAlertsDrawer
+          isOpen={isAlertsDrawerOpen}
+          onClose={() => setIsAlertsDrawerOpen(false)}
+          alerts={alerts}
+          user={currentUser}
+          onMarkAsRead={handleMarkAlertAsRead}
+          onMarkAllAsRead={handleMarkAllAlertsAsRead}
+          onUpdateAgentPhone={(newPhone) => {
+            setCurrentUser((prev) => (prev ? { ...prev, phone: newPhone } : null));
+          }}
+          onTriggerSimulatedLead={() => {
+            setIsSimulateLeadOpen(true);
+          }}
+          soundEnabled={soundEnabled}
+          onToggleSound={(enabled) => setSoundEnabled(enabled)}
+        />
+      )}
+
+      {/* Pro Upgrade & Freemium Paywall Modal */}
+      <PaywallModal
+        isOpen={isPaywallOpen}
+        onClose={() => setIsPaywallOpen(false)}
+        isPro={isPro}
+        onUpgradeSuccess={() => {
+          setIsPro(true);
+          showToast('🎉 Upgraded to AgentZap Pro! Unlimited leads and WhatsApp automation unlocked.');
+        }}
+        onToggleSubscription={() => {
+          setIsPro((prev) => {
+            const next = !prev;
+            showToast(next ? 'AgentZap Pro activated.' : 'Downgraded to Free evaluation tier.');
+            return next;
+          });
+        }}
+        usedLeadsCount={leads.length}
+        maxFreeLeads={5}
+      />
+
+      {/* Legal & Trust Governance Modal */}
+      <LegalTrustModal
+        isOpen={isLegalModalOpen}
+        onClose={() => setIsLegalModalOpen(false)}
+        initialTab={legalModalTab}
+      />
+
+      {/* 3. Legal & Trust Footer */}
+      <footer className="mt-auto border-t border-slate-200/80 bg-white py-5 sm:py-6 shadow-[0_-1px_3px_rgba(0,0,0,0.02)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4 text-xs text-slate-500">
+          {/* Copyright & Mission Tag */}
+          <div className="flex items-center gap-2 text-center md:text-left">
+            <span className="font-medium text-slate-700">
+              © 2026 AgentZap Technologies • Built for Real Estate Consultants
+            </span>
+          </div>
+
+          {/* 4 Clickable Modal Triggers & Secondary Actions */}
+          <div className="flex flex-wrap items-center justify-center gap-x-3.5 sm:gap-x-4 gap-y-1.5 font-medium">
+            <button
+              type="button"
+              onClick={() => handleOpenLegalModal('terms')}
+              className="text-slate-600 hover:text-emerald-700 hover:underline transition-colors cursor-pointer"
+            >
+              Terms of Service
+            </button>
+            <span aria-hidden="true" className="text-slate-300">·</span>
+            <button
+              type="button"
+              onClick={() => handleOpenLegalModal('privacy')}
+              className="text-slate-600 hover:text-emerald-700 hover:underline transition-colors cursor-pointer"
+            >
+              Lead Privacy Policy
+            </button>
+            <span aria-hidden="true" className="text-slate-300">·</span>
+            <button
+              type="button"
+              onClick={() => handleOpenLegalModal('refund')}
+              className="text-slate-600 hover:text-emerald-700 hover:underline transition-colors cursor-pointer"
+            >
+              Refund Policy
+            </button>
+            <span aria-hidden="true" className="text-slate-300">·</span>
+            <button
+              type="button"
+              onClick={() => handleOpenLegalModal('support')}
+              className="text-emerald-700 hover:text-emerald-800 font-semibold hover:underline transition-colors cursor-pointer"
+            >
+              Support Desk
+            </button>
+
+            <span aria-hidden="true" className="text-slate-300 hidden sm:inline">|</span>
+
+            <button
+              type="button"
+              onClick={() => {
+                setProperties(INITIAL_PROPERTIES);
+                setLeads(INITIAL_LEADS);
+                setAlerts(INITIAL_ALERTS);
+                setBookings(INITIAL_BOOKINGS as SiteVisitBooking[]);
+                showToast('Reset sample listings, leads, alerts, and calendar visits.');
+              }}
+              className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+              title="Reset initial properties and sample leads"
+            >
+              Reset Data
+            </button>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+        }
+        
+            
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+  
+  
